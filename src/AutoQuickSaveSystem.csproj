@@ -63,6 +63,7 @@
     <Compile Include="QuickSaves\QuicksaveCleanup.cs" />
     <Compile Include="AutoQuickSaveSystem.cs" />
     <Compile Include="QuickSaves\SaveOnSceneChanges.cs" />
+    <Compile Include="QuickSaves\ScenarioLoadState.cs" />
     <Compile Include="RegisterToolbar.cs" />
     <Compile Include="SaveConfirmationSound\SaveConfirmationSound.cs" />
     <Compile Include="QuickSaves\SaveOnlaunch.cs" />

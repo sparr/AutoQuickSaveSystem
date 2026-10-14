@@ -13,6 +13,10 @@ namespace AutoQuickSaveSystem
 
         static public string dateFormat = "yyyy-MM-dd--HH-mm-ss";
         static internal float lastBackup = 0;
+        // Set when a timed quicksave was due but deferred until the scene has finished loading.
+        static bool retrySoon;
+        // Seconds a launch quicksave waits for the scene to finish loading.
+        const float MaxLoadWait = 30f;
         public const string LAUNCH_QS_PREFIX = "LaunchQSave_";
         public const string AUTO_QS_PREFIX = "AutoQSave_";
         public const string SCENE_QS_PREFIX = "SceneQSave_";
@@ -93,7 +97,13 @@ namespace AutoQuickSaveSystem
 
                             break;
                     }
-                    yield return new WaitForSecondsRealtime((float)(sleepTime * 60f - elapsed.TotalSeconds));
+                    if (retrySoon)
+                    {
+                        retrySoon = false;
+                        yield return new WaitForSecondsRealtime(1f);
+                    }
+                    else
+                        yield return new WaitForSecondsRealtime((float)(sleepTime * 60f - elapsed.TotalSeconds));
                 }
                 else
                     yield return new WaitForSecondsRealtime(60f);
@@ -108,12 +118,48 @@ namespace AutoQuickSaveSystem
                 return;
             }
             //Log.Info("QuicksaveGame, stacktrace: " + Environment.StackTrace);
-            DoQuicksave(AUTO_QS_PREFIX + Configuration.QuickSaveNameTemplate, "AutoQuickSave to");
+            if (!DoQuicksave(AUTO_QS_PREFIX + Configuration.QuickSaveNameTemplate, "AutoQuickSave to"))
+            {
+                retrySoon = true;
+                return;
+            }
             setTime = DateTime.Now;
         }
 
-        internal static void DoQuicksave(string template, string message)
+        // Saves once the scene's scenario modules have finished loading, or gives up if the scene
+        // changes or they take longer than MaxLoadWait.
+        internal void QuicksaveWhenLoaded(string template, string message)
         {
+            StartCoroutine(QuicksaveWhenLoadedRoutine(template, message));
+        }
+
+        IEnumerator QuicksaveWhenLoadedRoutine(string template, string message)
+        {
+            GameScenes scene = HighLogic.LoadedScene;
+            float start = Time.realtimeSinceStartup;
+            while (ScenarioLoadState.Pending() != null)
+            {
+                if (HighLogic.LoadedScene != scene || Time.realtimeSinceStartup - start > MaxLoadWait)
+                {
+                    Log.Info("Quicksave to " + template + " skipped, the scene did not finish loading");
+                    yield break;
+                }
+                yield return null;
+            }
+            DoQuicksave(template, message);
+        }
+
+        // Returns false without saving if a scenario module has not finished loading its state from
+        // the save, because the save would lose that state.
+        internal static bool DoQuicksave(string template, string message)
+        {
+            string pending = ScenarioLoadState.Pending();
+            if (pending != null)
+            {
+                Log.Info("Quicksave to " + template + " deferred, " + pending + " has not finished loading");
+                return false;
+            }
+
             if (HighLogic.LoadedScene == GameScenes.SPACECENTER ||
                 HighLogic.LoadedScene == GameScenes.EDITOR ||
                 HighLogic.LoadedScene == GameScenes.FLIGHT ||
@@ -140,6 +186,7 @@ namespace AutoQuickSaveSystem
 
                 QuicksaveCleanup.Cleanup();
             }
+            return true;
         }
     }
 
